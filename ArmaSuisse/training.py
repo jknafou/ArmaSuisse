@@ -16,9 +16,9 @@ parser.add_argument('--DEVICE_ID', help='gpu id for computation allocation', typ
 
 args = parser.parse_args()
 
-if 'large' in args.MODEL:
-    args.BATCH_SIZE = math.ceil(args.BATCH_SIZE/5)
-    args.GRAD_ACC = 5
+# if 'large' in args.MODEL:
+#     args.BATCH_SIZE = math.ceil(args.BATCH_SIZE/5)
+#     args.GRAD_ACC = 5
 
 results2dataset(args.DATA_DIR)
 cross_fold_splitting(args.DATA_DIR, args.N_FOLD)
