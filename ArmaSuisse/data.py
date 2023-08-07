@@ -1,6 +1,6 @@
 from transformers import PreTrainedTokenizerBase
 from dataclasses import dataclass
-import torch, numpy as np, pandas as pd, random, os
+import torch, numpy as np, pandas as pd, random, os, glob, json
 from sklearn.metrics import accuracy_score, f1_score
 from operator import itemgetter
 from scipy.special import softmax
@@ -156,7 +156,7 @@ class Data():
 
     def prediction_file_unification(self, model_dir):
         model_dir = '/'.join(model_dir.split('/')[:-1]) + '/'
-        prediction_file_paths = [x[0] + '/test_prediction.csv' for x in os.walk(model_dir) if 'fold=' in x[0]]
+        prediction_file_paths = [x[0] + '/test_prediction.csv' for x in os.walk(model_dir) if 'fold=' in x[0] and os.path.exists(x[0] + '/test_prediction.csv')]
         predictions = []
         for prediction_file_path in prediction_file_paths:
             with open(prediction_file_path) as f:
@@ -173,3 +173,46 @@ class Data():
 
         with open(model_dir + 'dataset_prediction.csv', mode='w') as f:
             f.write(file)
+
+    def ensemble(self, model_dir):
+        prediction_file_paths = glob.glob(model_dir + '/*/dataset_prediction.csv')
+        prediction = {}
+        for prediction_file_path in prediction_file_paths:
+            with open(prediction_file_path) as f:
+                file = f.read()
+            file = file.strip().split('\n')
+
+            file = [p.split('\t') for p in file]
+            file = {int(doc_id): float(p) for [doc_id, _, p] in file}
+            for doc_id in file.keys():
+                if doc_id not in prediction:
+                    prediction[doc_id] = {
+                        'probability': []
+                    }
+
+                prediction[doc_id]['probability'].append(file[doc_id])
+
+        doc_ids = list(prediction.keys())
+        doc_ids.sort()
+        file = ''
+        for doc_id in doc_ids:
+            p = np.mean(prediction[doc_id]['probability'])
+            l = 0 if p < .5 else 1
+            prediction[doc_id] = {
+                'label': l,
+                'probability': p
+            }
+            file += str(doc_id) + '\t' + str(l) + '\t' + str(p) + '\n'
+
+        with open(model_dir + 'ensemble_dataset_prediction.csv', mode='w') as f:
+            f.write(file)
+
+        gold = self.dataset_dict['train'] | self.dataset_dict['dev'] | self.dataset_dict['test']
+
+        metrics = {
+            'data_size': len(prediction),
+            'accuracy': self.accuracy(prediction, gold),
+            'macro_f1_score': self.f1_score(prediction, gold),
+        }
+        with open(model_dir + 'ensemble_metrics.json', 'w', encoding='utf-8') as f:
+            json.dump(metrics, f, ensure_ascii=False, indent=4)
